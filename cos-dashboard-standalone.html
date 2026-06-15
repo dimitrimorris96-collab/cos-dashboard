@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<!--
+  Chief of Staff Dashboard — Standalone Version
+  =============================================
+  STATUS: Ready to work on in Claude Code.
+
+  TO MAKE LIVE DATA WORK:
+  ─────────────────────────────────────────────
+  The Notion API blocks browser requests due to CORS. To fix this, you need
+  a small backend proxy. Two easy options:
+
+  OPTION A — Cloudflare Worker (recommended for phone access)
+    1. Create a free Cloudflare Workers account
+    2. Deploy a Worker that forwards requests to api.notion.com with your token
+    3. Set PROXY_BASE below to your Worker URL
+    Sample Worker code is in the comments at the bottom of this file.
+
+  OPTION B — Run locally on your laptop
+    Run: npx cors-anywhere  (or any CORS proxy)
+    Set PROXY_BASE to: http://localhost:8080/https://api.notion.com
+
+  STATIC CONTENT (works right now, no server needed):
+  - Bible reading plan
+  - Day-of-week workflow prompts
+  - Monthly/quarterly workflow cards
+  - Quick links
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chief of Staff — Dimitri Morris</title>
+<style>
+/* ── CONFIG: swap these CSS vars to retheme ── */
+:root {
+  color-scheme: light;
+  --bg: #f4f4f8;
+  --card: #ffffff;
+  --border: #e4e4ee;
+  --text: #1a1a2e;
+  --muted: #6b6b85;
+  --accent: #b86c2a;
+  --accent-bg: #fdf0e6;
+  --accent-border: #f5d0a9;
+  --green: #15803d;
+  --green-bg: #f0fdf4;
+  --green-border: #bbf7d0;
+  --blue: #1d4ed8;
+  --blue-bg: #eff6ff;
+  --blue-border: #bfdbfe;
+  --purple: #7c3aed;
+  --purple-bg: #f5f3ff;
+  --red: #dc2626;
+  --red-bg: #fef2f2;
+  --red-border: #fecaca;
+  --orange: #c2410c;
+  --orange-bg: #fff7ed;
+  --yellow: #a16207;
+  --yellow-bg: #fefce8;
+  --yellow-border: #fde68a;
+  --indigo: #4338ca;
+  --indigo-bg: #eef2ff;
+  --indigo-border: #c7d2fe;
+  --radius: 10px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 20px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+/* ── Header ── */
+.header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.header-title { font-size: 16px; font-weight: 700; }
+.header-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.day-badge { font-size: 11px; font-weight: 600; padding: 4px 11px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.4px; }
+/* ── Config Banner ── */
+.config-banner {
+  background: var(--yellow-bg); border: 1px solid var(--yellow-border);
+  border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px;
+  font-size: 13px; display: none;
+}
+.config-banner.show { display: block; }
+.config-banner strong { color: var(--yellow); }
+/* ── Grid ── */
+.grid   { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+@media (max-width: 700px) {
+  .grid, .grid-3 { grid-template-columns: 1fr; }
+  .wf-grid { grid-template-columns: 1fr !important; }
+  .cl-grid { grid-template-columns: 1fr !important; }
+  .monthly-cl-items { grid-template-columns: 1fr !important; }
+}
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+.card.full { grid-column: 1 / -1; }
+.card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); margin-bottom: 14px; }
+/* ── Workflow Card ── */
+.wf-card {
+  background: var(--card); border: 1px solid var(--accent-border);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  padding: 18px; margin-bottom: 14px;
+}
+.wf-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 12px; }
+.wf-title-group { flex: 1; }
+.wf-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.wf-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.wf-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px; }
+.wf-badge.auto    { background: var(--green-bg);  color: var(--green);  border: 1px solid var(--green-border); }
+.wf-badge.trigger { background: var(--orange-bg); color: var(--orange); border: 1px solid #fed7aa; }
+.wf-sources { display: flex; gap: 6px; flex-wrap: wrap; }
+.wf-source { font-size: 11px; color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 2px 9px; }
+.wf-prompt-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 6px; }
+.wf-prompt {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
+  padding: 12px 14px; font-size: 13px; line-height: 1.6; margin-bottom: 12px;
+  max-height: 120px; overflow-y: auto;
+}
+.wf-prompt.expanded { max-height: none; }
+.wf-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.run-btn {
+  display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px;
+  background: var(--accent); color: #fff; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s;
+}
+.run-btn:hover  { background: #a05c22; }
+.run-btn.copied { background: var(--green); }
+.expand-btn { background: none; border: none; cursor: pointer; font-size: 12px; color: var(--muted); padding: 0; text-decoration: underline; text-underline-offset: 2px; }
+.expand-btn:hover { color: var(--text); }
+/* ── Daily card ── */
+.daily-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 14px; }
+.daily-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; }
+.daily-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); }
+.daily-prompt { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 12px 14px; font-size: 13px; line-height: 1.6; margin-bottom: 10px; margin-top: 12px; }
+/* ── Tasks ── */
+.task { display: flex; align-items: flex-start; gap: 9px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.task:last-child { border-bottom: none; }
+.task-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-top: 5px; flex-shrink: 0; }
+.task.done .task-dot { background: var(--green); }
+.task.done .task-label { color: var(--muted); text-decoration: line-through; }
+.task-label { font-size: 13px; }
+/* ── Debrief ── */
+.debrief-name { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.debrief-date { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.rating-badge { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; margin-bottom: 12px; }
+.r-high { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+.r-mid  { background: var(--blue-bg);  color: var(--blue);  border: 1px solid var(--blue-border); }
+.r-low  { background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-border); }
+.d-field { margin-bottom: 10px; }
+.d-field-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 3px; }
+.d-field-text  { font-size: 13px; }
+/* ── Checklist ── */
+.cl-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.cl-group-title { font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.cl-item { display: flex; align-items: flex-start; gap: 7px; padding: 3px 0; font-size: 13px; }
+.cl-box { width: 14px; height: 14px; border: 1.5px solid var(--border); border-radius: 3px; flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center; }
+.cl-box.checked { background: var(--green); border-color: var(--green); }
+.cl-box.checked::after { content: '✓'; color: #fff; font-size: 9px; font-weight: 700; }
+.cl-item.done .cl-label { color: var(--muted); text-decoration: line-through; }
+/* ── Accordion ── */
+.section-accordion { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
+.accordion-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; cursor: pointer; user-select: none; }
+.accordion-header:hover { background: var(--bg); }
+.accordion-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); }
+.accordion-arrow { font-size: 12px; color: var(--muted); transition: transform 0.2s; }
+.accordion-arrow.open { transform: rotate(180deg); }
+.accordion-body { padding: 0 18px 18px; display: none; }
+.accordion-body.open { display: block; }
+.wf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.wf-mini { border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.wf-mini-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.wf-mini-when { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+.wf-mini-prompt { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 12px; line-height: 1.6; margin-bottom: 10px; max-height: 80px; overflow-y: auto; }
+.wf-mini-prompt.expanded { max-height: none; }
+.run-btn-sm { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--accent); color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+.run-btn-sm:hover  { background: #a05c22; }
+.run-btn-sm.copied { background: var(--green); }
+.monthly-cl { margin-top: 16px; }
+.monthly-cl-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 10px; }
+.monthly-cl-items { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.mcl-item { display: flex; align-items: flex-start; gap: 7px; padding: 4px 0; font-size: 13px; }
+.mcl-box { width: 14px; height: 14px; border: 1.5px solid var(--border); border-radius: 3px; flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.mcl-box:hover { border-color: var(--accent); }
+.mcl-box.checked { background: var(--green); border-color: var(--green); }
+.mcl-box.checked::after { content: '✓'; color: #fff; font-size: 9px; font-weight: 700; }
+.mcl-item.done .mcl-label { color: var(--muted); text-decoration: line-through; }
+/* ── Links ── */
+.links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.lnk { display: inline-flex; align-items: center; gap: 5px; padding: 7px 13px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--text); text-decoration: none; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+.lnk:hover { border-color: var(--accent); color: var(--accent); }
+/* ── Toast ── */
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1a1a2e; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 100; white-space: nowrap; }
+.toast.show { opacity: 1; }
+/* ── Bible Reading ── */
+.reading-passage {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px; background: var(--indigo-bg); border: 1px solid var(--indigo-border);
+  border-radius: 7px; color: var(--indigo); text-decoration: none; font-size: 13px;
+  font-weight: 500; margin-bottom: 7px; transition: all 0.15s;
+}
+.reading-passage:last-child { margin-bottom: 0; }
+.reading-passage:hover { background: #e0e7ff; border-color: #a5b4fc; }
+.reading-passage-arrow { font-size: 11px; opacity: 0.6; flex-shrink: 0; }
+/* ── States ── */
+.loading { color: var(--muted); font-style: italic; font-size: 13px; padding: 6px 0; }
+.error   { color: var(--red);   font-size: 13px; }
+.empty   { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+  CONFIGURATION — edit these values before running
+  ═══════════════════════════════════════════════════════════════════════════ -->
+<script>
+const CONFIG = {
+  // Your Notion integration token (starts with "secret_")
+  // Create one at: https://www.notion.so/my-integrations
+  // Make sure to share your Weekly Dashboard page and Debriefs database with it
+  NOTION_TOKEN: 'secret_YOUR_TOKEN_HERE',
+
+  // Notion page & database IDs (already filled in for your workspace)
+  WEEKLY_PAGE_ID:  '379c1dee8315810e893edf6e8daccb70',
+  DEBRIEFS_DB_ID:  '4f2dfae532f34e42963c8e522f67b558',
+
+  // Proxy URL — needed because browsers block direct Notion API calls (CORS).
+  // Options:
+  //   A) Leave blank '' and open the file via a local server (e.g. `npx serve .`)
+  //      Then also run:  npx local-cors-proxy --proxyUrl https://api.notion.com
+  //      And set this to: 'http://localhost:8010/proxy'
+  //   B) Deploy a Cloudflare Worker (see sample at the bottom of this file)
+  //      Then set this to your Worker URL: 'https://cos-proxy.YOUR_NAME.workers.dev'
+  PROXY_BASE: '',
+
+  // Notion API version
+  NOTION_VERSION: '2022-06-28',
+};
+</script>
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<!-- Config warning banner (shown if token not set) -->
+<div class="config-banner" id="config-banner">
+  <strong>⚠️ Setup needed:</strong> Add your Notion token and proxy URL in the CONFIG block at the top of this file. See the comments for instructions.
+</div>
+
+<div class="header">
+  <div>
+    <div class="header-title">⚡ Chief of Staff</div>
+    <div class="header-sub" id="date-line"></div>
+  </div>
+  <div class="day-badge" id="day-badge"></div>
+</div>
+
+<div id="primary-workflow"></div>
+<div id="daily-checkin"></div>
+
+<div class="grid-3" style="margin-bottom:14px">
+  <div class="card">
+    <div class="card-title">🔥 Active Tasks</div>
+    <div id="tasks-content" class="loading">Loading from Notion…</div>
+  </div>
+  <div class="card">
+    <div class="card-title">📝 Last Sunday</div>
+    <div id="debrief-content" class="loading">Loading from Notion…</div>
+  </div>
+  <div class="card">
+    <div class="card-title">📖 Today's Reading</div>
+    <div id="reading-content"></div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card full">
+    <div class="card-title">✅ Weekly Checklist</div>
+    <div id="checklist-content" class="loading">Loading from Notion…</div>
+  </div>
+</div>
+
+<div class="section-accordion" id="monthly-accordion">
+  <div class="accordion-header" onclick="toggleAccordion('monthly-accordion')">
+    <div class="accordion-title">📆 Monthly &amp; Quarterly Workflows</div>
+    <div class="accordion-arrow" id="monthly-accordion-arrow">▼</div>
+  </div>
+  <div class="accordion-body" id="monthly-accordion-body">
+    <div class="wf-grid" id="monthly-workflows"></div>
+    <div class="monthly-cl" id="monthly-checklist"></div>
+  </div>
+</div>
+
+<div class="links">
+  <a class="lnk" href="https://services.planningcenteronline.com" target="_blank">📋 Planning Center</a>
+  <a class="lnk" href="https://app.notion.com/p/379c1dee83158142b192cde27f2643ef" target="_blank">🏠 Notion Hub</a>
+  <a class="lnk" href="https://app.notion.com/p/379c1dee8315810e893edf6e8daccb70" target="_blank">📅 Weekly Dashboard</a>
+  <a class="lnk" href="https://app.notion.com/p/2a22483001ae46789150c2fdb7600bf9" target="_blank">📝 All Debriefs</a>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// NOTION API
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function notionHeaders() {
+  return {
+    'Authorization': `Bearer ${CONFIG.NOTION_TOKEN}`,
+    'Notion-Version': CONFIG.NOTION_VERSION,
+    'Content-Type': 'application/json',
+  };
+}
+
+function notionUrl(path) {
+  // Route through proxy if set, otherwise hit Notion directly (needs CORS setup)
+  const base = CONFIG.PROXY_BASE
+    ? CONFIG.PROXY_BASE.replace(/\/$/, '')
+    : 'https://api.notion.com';
+  return `${base}${path}`;
+}
+
+// Fetch all blocks for a page (handles pagination)
+async function fetchBlocks(pageId) {
+  let results = [], cursor = undefined;
+  do {
+    const url = notionUrl(`/v1/blocks/${pageId}/children?page_size=100${cursor ? '&start_cursor=' + cursor : ''}`);
+    const res = await fetch(url, { headers: notionHeaders() });
+    if (!res.ok) throw new Error(`Notion blocks error: ${res.status}`);
+    const data = await res.json();
+    results = results.concat(data.results);
+    cursor = data.has_more ? data.next_cursor : undefined;
+  } while (cursor);
+  return results;
+}
+
+// Query a database (returns first page of results, sorted by created time desc)
+async function queryDatabase(dbId, sorts = [{ timestamp: 'created_time', direction: 'descending' }], filter = null) {
+  const body = { page_size: 10, sorts };
+  if (filter) body.filter = filter;
+  const res = await fetch(notionUrl(`/v1/databases/${dbId}/query`), {
+    method: 'POST',
+    headers: notionHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Notion DB error: ${res.status}`);
+  return (await res.json()).results;
+}
+
+// Fetch a single page's properties
+async function fetchPage(pageId) {
+  const res = await fetch(notionUrl(`/v1/pages/${pageId}`), { headers: notionHeaders() });
+  if (!res.ok) throw new Error(`Notion page error: ${res.status}`);
+  return res.json();
+}
+
+// ─── Block → text helpers ─────────────────────────────────────────────────────
+function richText(arr = []) {
+  return (arr || []).map(r => r.plain_text || '').join('');
+}
+
+// Parse blocks into tasks (to_do blocks) and checklist groups (heading + to_do)
+function parseBlocks(blocks) {
+  const tasks = [];
+  const checklistGroups = [];
+  let inActiveTasks = false;
+  let inChecklist = false;
+  let currentGroup = null;
+
+  for (const block of blocks) {
+    const type = block.type;
+    const text = richText(block[type]?.rich_text);
+
+    // Detect section headers
+    if (['heading_1','heading_2','heading_3'].includes(type)) {
+      if (/active tasks/i.test(text)) {
+        inActiveTasks = true; inChecklist = false; currentGroup = null;
+      } else if (/weekly checklist/i.test(text)) {
+        inChecklist = true; inActiveTasks = false; currentGroup = null;
+      } else if (inChecklist) {
+        // Sub-heading within checklist = a group
+        currentGroup = { title: text, items: [] };
+        checklistGroups.push(currentGroup);
+      } else {
+        // Any other major heading ends both sections
+        inActiveTasks = false; inChecklist = false; currentGroup = null;
+      }
+      continue;
+    }
+
+    // Divider ends sections
+    if (type === 'divider') {
+      inActiveTasks = false; inChecklist = false; currentGroup = null;
+      continue;
+    }
+
+    // To-do blocks
+    if (type === 'to_do') {
+      const checked = block.to_do?.checked || false;
+      const label   = richText(block.to_do?.rich_text);
+      if (inActiveTasks) {
+        tasks.push({ done: checked, text: label });
+      } else if (inChecklist) {
+        if (!currentGroup) {
+          currentGroup = { title: '', items: [] };
+          checklistGroups.push(currentGroup);
+        }
+        currentGroup.items.push({ done: checked, text: label });
+      }
+    }
+  }
+
+  return { tasks, checklistGroups };
+}
+
+// ─── Render helpers ───────────────────────────────────────────────────────────
+function renderTasks(items) {
+  if (!items.length) return '<div class="empty">No active tasks.</div>';
+  return items.map(t => `
+    <div class="task ${t.done ? 'done' : ''}">
+      <div class="task-dot"></div>
+      <div class="task-label">${escHtml(t.text)}</div>
+    </div>`).join('');
+}
+
+function renderChecklist(groups) {
+  const filtered = groups.filter(g => g.items.length);
+  if (!filtered.length) return '<div class="empty">Checklist not found in page.</div>';
+  return `<div class="cl-grid">${filtered.map(g => `
+    <div>
+      ${g.title ? `<div class="cl-group-title">${escHtml(g.title)}</div>` : ''}
+      ${g.items.map(i => `
+        <div class="cl-item ${i.done ? 'done' : ''}">
+          <div class="cl-box ${i.done ? 'checked' : ''}"></div>
+          <span class="cl-label">${escHtml(i.text)}</span>
+        </div>`).join('')}
+    </div>`).join('')}</div>`;
+}
+
+function rClass(r) {
+  if (r === '9-10') return 'r-high';
+  if (r === '7-8')  return 'r-mid';
+  return 'r-low';
+}
+
+function dField(label, val) {
+  if (!val) return '';
+  const text = Array.isArray(val) ? val.map(r => r.plain_text).join('') : String(val);
+  if (!text.trim()) return '';
+  return `<div class="d-field">
+    <div class="d-field-label">${label}</div>
+    <div class="d-field-text">${escHtml(text.substring(0, 280))}</div>
+  </div>`;
+}
+
+function propText(prop) {
+  if (!prop) return '';
+  if (prop.type === 'title')      return richText(prop.title);
+  if (prop.type === 'rich_text')  return richText(prop.rich_text);
+  if (prop.type === 'select')     return prop.select?.name || '';
+  if (prop.type === 'date')       return prop.date?.start || '';
+  return '';
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DATA LOADING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function loadWeekly() {
+  try {
+    const blocks = await fetchBlocks(CONFIG.WEEKLY_PAGE_ID);
+    const { tasks, checklistGroups } = parseBlocks(blocks);
+    document.getElementById('tasks-content').innerHTML    = renderTasks(tasks);
+    document.getElementById('checklist-content').innerHTML = renderChecklist(checklistGroups);
+  } catch (e) {
+    console.error('Weekly load error:', e);
+    const msg = `<div class="error">Couldn't load from Notion. Check your token and proxy. <a href="https://app.notion.com/p/379c1dee8315810e893edf6e8daccb70" target="_blank" style="color:var(--accent)">Open in Notion ↗</a></div>`;
+    document.getElementById('tasks-content').innerHTML    = msg;
+    document.getElementById('checklist-content').innerHTML = msg;
+  }
+}
+
+async function loadDebrief() {
+  try {
+    const rows = await queryDatabase(CONFIG.DEBRIEFS_DB_ID);
+    if (!rows.length) {
+      document.getElementById('debrief-content').innerHTML = '<div class="empty">No debriefs yet.</div>';
+      return;
+    }
+    const row   = rows[0];
+    const props = row.properties || {};
+    const title  = propText(props['Name'])  || 'Sunday Service';
+    const rating = propText(props['Rating']);
+    const date   = propText(props['Date'])  || row.created_time || '';
+    const dateStr = date ? new Date(date).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }) : '';
+
+    document.getElementById('debrief-content').innerHTML = `
+      <div class="debrief-name">${escHtml(title)}</div>
+      <div class="debrief-date">${escHtml(dateStr)}</div>
+      ${rating ? `<div class="rating-badge ${rClass(rating)}">★ ${escHtml(rating)}</div>` : ''}
+      ${dField('What Went Well',  props['What Went Well'])}
+      ${dField('To Adjust',       props['What to Adjust'])}
+      ${dField('Follow-ups',      props['Follow-ups & Owners'])}
+      ${dField('Flags',           props['Flags for Leadership'])}
+    `;
+  } catch (e) {
+    console.error('Debrief load error:', e);
+    document.getElementById('debrief-content').innerHTML =
+      `<div class="error">Couldn't load debrief. <a href="https://app.notion.com/p/2a22483001ae46789150c2fdb7600bf9" target="_blank" style="color:var(--accent)">Open in Notion ↗</a></div>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BIBLE READING PLAN
+// ═══════════════════════════════════════════════════════════════════════════════
+const PLAN_RAW = `January
+01 THU - Psalm 8; Numbers 6:22-27; Luke 2:15-21
+02 FRI - Psalm 18:1-30; Ruth 1; Colossians 2:8-23
+03 SAT - Psalm 131; Ruth 2; Colossians 3:1-11
+04 SUN - Psalm 147
+05 MON - Psalm 48; Ruth 3-4:17; Colossians 3:12-4:18
+06 TUE - Psalm 72; Isaiah 60:1-6; Matthew 2:1-12
+07 WED - Psalm 99; Jeremiah 23:1-8; Matthew 20:1-16
+08 THU - Psalm 46; Jeremiah 30:1-17; Matthew 20:17-28
+09 FRI - Psalm 55; Jeremiah 30:18-31:9; Matthew 20:29-34
+10 SAT - Psalm 76; Jeremiah 31:10-17; Matthew 23:1-12
+11 SUN - Psalm 29; Matthew 3:13-17
+12 MON - Psalm 80; Genesis 1:1-19; Matthew 21:1-17
+13 TUE - Psalm 9; Genesis 1:20-2:3; Matthew 21:18-32
+14 WED - Psalm 20; Genesis 2:4-25; Matthew 21:33-46
+15 THU - Psalm 90; Genesis 3; Matthew 22:1-14
+16 FRI - Psalm 88; Genesis 4:1-16, 25-26; Matthew 22:15-33
+17 SAT - Psalm 84; Genesis 6:1-10; Matthew 22:34-46
+18 SUN - Psalm 40
+19 MON - Psalm 145; Genesis 6:11-7:10; Matthew 24:1-14
+20 TUE - Psalm 103; Genesis 7:11-24; Matthew 24:15-28
+21 WED - Psalm 81; Genesis 8:1-14; Matthew 24:29-51
+22 THU - Psalm 148; Genesis 8:15-9:7; Matthew 25:1-13
+23 FRI - Psalm 149; Genesis 9:8-19; Matthew 25:14-30
+24 SAT - Psalm 128; Genesis 11:1-9; Matthew 25:31-46
+25 SUN - Psalm 67; Acts 9:1-22
+26 MON - Psalm 108; Genesis 11:27-12:9; Matthew 26:1-16
+27 TUE - Psalm 132; Genesis 13:2-18; Matthew 26:17-35
+28 WED - Psalm 45; Genesis 14; Matthew 26:36-46
+29 THU - Psalm 47; Genesis 15; Matthew 26:47-56
+30 FRI - Psalm 61; Genesis 16; Matthew 26:57-75
+31 SAT - Psalm 68; Genesis 17:1-22; Matthew 27:1-10
+February
+01 SUN - Psalm 36
+02 MON - Psalm 24; Malachi 3:1-5; Luke 2:22-40
+03 TUE - Psalm 6; Genesis 18:1-15; Matthew 27:11-44
+04 WED - Psalm 119:1-32; Genesis 19:1-29; Matthew 27:45-56
+05 THU - Psalm 14; Genesis 21:1-21; Matthew 27:57-66
+06 FRI - Psalm 17; Genesis 22:1-19; Matthew 28:1-15
+07 SAT - Psalm 21; Genesis 23; Matthew 28:16-20
+08 SUN - Psalm 136
+09 MON - Psalm 27; Genesis 29:31-30:24; 2 Timothy 1:1-8
+10 TUE - Psalm 33; Genesis 31:1-24; 2 Timothy 4:9-22
+11 WED - Psalm 38; Genesis 31:25-32:2; Titus 1
+12 THU - Psalm 37; Genesis 32:3-30; Titus 2
+13 FRI - Psalm 35; Genesis 33:1-17; Titus 3
+14 SAT - Psalm 43; Genesis 35; Philemon
+15 SUN - Psalm 99
+16 MON - Psalm 44; Genesis 37:1-11; Galatians 1
+17 TUE - Psalm 52; Genesis 37:12-36; Galatians 2:1-10
+18 WED - Psalm 51; Joel 2:1-17; 2 Corinthians 5:20-6:10
+19 THU - Psalm 56; Genesis 39; Galatians 2:11-21
+20 FRI - Psalm 54; Genesis 40; Galatians 3:1-14
+21 SAT - Psalm 71; Genesis 41:1-24; Galatians 3:15-22
+22 SUN - Psalm 32
+23 MON - Psalm 11; Genesis 41:25-45; Galatians 3:23-4:7
+24 TUE - Psalm 73; Genesis 41:46-42:5; Galatians 4:8-20
+25 WED - Psalm 77; Genesis 42:6-17; Galatians 4:21-5:1
+26 THU - Psalm 42; Genesis 42:18-28; Galatians 5:2-15
+27 FRI - Psalm 22; Genesis 42:29-36; Galatians 5:16-26
+28 SAT - Psalm 59; Genesis 43:1-15; Galatians 6
+March
+01 SUN - Psalm 121
+02 MON - Psalm 26; Genesis 43:16-34; Hebrews 1
+03 TUE - Psalm 50; Genesis 44:1-17; Hebrews 2:1-9
+04 WED - Psalm 119:105-128; Genesis 44:18-34; Hebrews 2:10-18
+05 THU - Psalm 119:1-128; Genesis 45:1-15; Hebrews 3:1-6
+06 FRI - Psalm 90; Genesis 45:16-28; Hebrews 3:7-19
+07 SAT - Psalm 88; Genesis 46:1-7, 28-34; Hebrews 4:1-13
+08 SUN - Psalm 95
+09 MON - Psalm 7; Genesis 47:1-27; Hebrews 4:14-5:10
+10 TUE - Psalm 9; Genesis 47:28-48:22; Hebrews 5:11-6:12
+11 WED - Psalm 38; Genesis 49:1-32; Hebrews 6:13-20
+12 THU - Psalm 57; Genesis 49:33-50:26; Hebrews 7:1-10
+13 FRI - Psalm 139; Exodus 1:1-14; Hebrews 7:11-28
+14 SAT - Psalm 120; Exodus 1:22-2:10; Hebrews 8
+15 SUN - Psalm 23; Colossians 3:12-17
+16 MON - Psalm 70; Exodus 2:11-22; Hebrews 9:1-14
+17 TUE - Psalm 79; Exodus 2:23-3:20; Hebrews 9:15-28
+18 WED - Psalm 63; Exodus 4:1-23; Hebrews 10:1-18
+19 THU - Psalm 89:26-36; Exodus 4:27-6:1; Matthew 1:18-25
+20 FRI - Psalm 102; Exodus 6:2-13; Hebrews 10:26-39
+21 SAT - Psalm 141; Exodus 7:8-25; Hebrews 11:1-16
+22 SUN - Psalm 130
+23 MON - Psalm 3; Exodus 8:1-19; Hebrews 11:17-31
+24 TUE - Psalm 35; Exodus 8:20-32; Hebrews 11:32-12:2
+25 WED - Psalm 40; Isaiah 7:10-14; Luke 1:26-38
+26 THU - Psalm 125; Exodus 9:13-35; Hebrews 12:14-29
+27 FRI - Psalm 19; Exodus 10; Hebrews 13:1-16
+28 SAT - Psalm 127; Exodus 11; Hebrews 13:17-25
+29 SUN - Psalm 62
+30 MON - Psalm 41; Lamentations 1:1-12; Luke 2:21-23
+31 TUE - Psalm 27; Lamentations 3:1-18; Luke 22:24-53
+April
+01 WED - Psalm 102; Jeremiah 11:18-20; Luke 22:54-71
+02 THU - Psalm 116; Leviticus 16:2-24; John 13:1-35
+03 FRI - Psalm 22; Isaiah 52:13-53:12; John 18:1-19:42
+04 SAT - Psalm 142; Job 14:1-14; John 19:38-42
+05 SUN - Psalm 118; Jeremiah 31:1-6; Acts 10:34-43
+06 MON - Psalm 117; Exodus 12:1-14; 1 Corinthians 15:1-11
+07 TUE - Psalm 112; Exodus 12:14-36; 1 Corinthians 15:12-19
+08 WED - Psalm 113; Exodus 12:37-51; 1 Corinthians 15:20-28
+09 THU - Psalm 114; Exodus 13:1-16; 1 Corinthians 15:29-34
+10 FRI - Psalm 149; Exodus 13:17-14:14; 1 Corinthians 15:35-50
+11 SAT - Psalm 150; Exodus 14:15-31; 1 Corinthians 15:51-58
+12 SUN - Psalm 16
+13 MON - Psalm 1; Exodus 15:1-21; Colossians 1:1-14
+14 TUE - Psalm 8; Exodus 15:22-16:10; Colossians 1:15-23
+15 WED - Psalm 119:1-32; Exodus 16:11-26; Colossians 1:24-2:3
+16 THU - Psalm 28; Exodus 17; Colossians 2:4-31
+17 FRI - Psalm 61; Exodus 18:1-12; Colossians 2:8-15
+18 SAT - Psalm 84; Exodus 18:13-27; Colossians 2:16-23
+19 SUN - Psalm 10
+20 MON - Psalm 30; Exodus 19; Luke 11:25
+21 TUE - Psalm 98; Exodus 20:1-21; Luke 1:26-38
+22 WED - Psalm 105; Exodus 24; Luke 1:39-56
+23 THU - Psalm 126; Exodus 25:1-22; John 15:18-21
+24 FRI - Psalm 107; Exodus 28:1-4, 29-38; Luke 2:1-20
+25 SAT - Psalm 119:9-16; Exodus 29:1-9; Mark 13:5-13
+26 SUN - Psalm 23
+27 MON - Psalm 43; Exodus 32:1-14; Luke 2:41-52
+28 TUE - Psalm 48; Exodus 32:15-34; Luke 3:1-14
+29 WED - Psalm 135; Exodus 33; Luke 3:15-22
+30 THU - Psalm 56; Exodus 34:1-10, 27-35; Luke 4:1-13
+May
+01 FRI - Psalm 119:1-8; Exodus 35:20-36:7; John 14:1-14
+02 SAT - Psalm 34; Exodus 40:17-38; Luke 4:31-37
+03 SUN - Psalm 31
+04 MON - Psalm 145; Numbers 9:15-10:36; Luke 4:38-44
+05 TUE - Psalm 73; Numbers 11:1-33; Luke 5:1-11
+06 WED - Psalm 77; Numbers 12; Luke 5:12-26
+07 THU - Psalm 148; Numbers 13:1-3, 17-33; Luke 5:27-39
+08 FRI - Psalm 136; Numbers 14:1-25; Luke 6:1-11
+09 SAT - Psalm 79; Numbers 14:26-45; Luke 6:12-26
+10 SUN - Psalm 66
+11 MON - Psalm 65; Numbers 16:1-35; Luke 6:27-38
+12 TUE - Psalm 127; Numbers 16:36-50; Luke 6:39-49
+13 WED - Psalm 100; Numbers 17:1-11; Luke 7:1-17
+14 THU - Psalm 105-128; Numbers 17:1-11; Luke 7:1-10
+15 FRI - Psalm 47; Acts 1:1-11; Luke 7:1-10
+16 SAT - Psalm 15; Numbers 20:1-13; Acts 1:15-26
+17 SUN - Psalm 97; Numbers 21:4-9; Acts 1:15-26
+18 MON - Psalm 68; Numbers 22:2-35; Luke 7:18-35
+19 TUE - Psalm 92; Numbers 22:36-23:12; Luke 7:36-50
+20 WED - Psalm 103; Numbers 22:36-23:12; Luke 8:1-15
+June
+01 MON - Psalm 113; Joshua 7:1-15; Luke 1:39-56
+02 TUE - Psalm 1; Joshua 7:16-26; Luke 10:38-42
+03 WED - Psalm 6; Joshua 8:1-29; Luke 11:1-13
+04 THU - Psalm 116; Joshua 8:30-35; John 6:51-58
+05 FRI - Psalm 17; Joshua 9:3-26; Luke 11:29-36
+06 SAT - Psalm 21; Joshua 10:1-15; Luke 11:37-54
+07 SUN - Psalm 33
+08 MON - Psalm 27; Joshua 14; Luke 12:1-12
+09 TUE - Psalm 36; Joshua 21:43-22:8; Luke 12:13-21
+10 WED - Psalm 34; Joshua 22:9-34; Luke 12:22-31
+11 THU - Psalm 112; Joshua 23; Acts 11:19-30
+12 FRI - Psalm 35; Joshua 24:1-28; Luke 12:41-48
+13 SAT - Psalm 43; Joshua 24:29-33; Luke 12:49-59
+14 SUN - Psalm 100
+15 MON - Psalm 44; Judges 2; Luke 13:1-9
+16 TUE - Psalm 52; Judges 4:1-23; Luke 13:10-21
+17 WED - Psalm 119:57-80; Judges 5; Luke 13:22-35
+18 THU - Psalm 57; Judges 6:1-24; Luke 14:1-11
+19 FRI - Psalm 51; Judges 6:25-40; Luke 14:12-24
+20 SAT - Psalm 68; Judges 7; Luke 14:25-35
+21 SUN - Psalm 86
+22 MON - Psalm 71; Judges 8:22-35; Luke 15:1-10
+23 TUE - Psalm 73; Judges 9:1-21; Luke 15:11-32
+24 WED - Psalm 85; Judges 9:22-57; Luke 1:57-66
+25 THU - Psalm 78:1-39; Judges 11:1-11; Luke 16:19-31
+26 FRI - Psalm 55; Judges 11:29-40; Luke 17:1-10
+27 SAT - Psalm 76; Judges 12:1-7; Luke 17:11-19
+28 SUN - Psalm 13
+29 MON - Psalm 125; Judges 13:1-24; Matthew 16:13-19
+30 TUE - Psalm 87; Judges 14; Luke 18:1-14
+July
+01 WED - Psalm 119:105-128; Judges 15:1-16:3; Luke 18:15-30
+02 THU - Psalm 92; Judges 16:4-31; Luke 18:31-43
+03 FRI - Psalm 146; Judges 17; John 20:24-29
+04 SAT - Psalm 96; Judges 18:1-20, 27-31; Luke 19:11-27
+05 SUN - Psalm 45
+06 MON - Psalm 101; 1 Samuel 1:1-20; Luke 19:28-40
+07 TUE - Psalm 106; 1 Samuel 1:21-2:11; Luke 19:41-48
+08 WED - Psalm 110; 1 Samuel 2:12-26; Luke 20:1-8
+09 THU - Psalm 115; 1 Samuel 2:27-36; Luke 20:9-19
+10 FRI - Psalm 130; 1 Samuel 3:1-4:1; Luke 20:20-26
+11 SAT - Psalm 120; 1 Samuel 4:1-22; Luke 20:27-40
+12 SUN - Psalm 119:105-112
+13 MON - Psalm 124; 1 Samuel 5; Luke 20:41-21:4
+14 TUE - Psalm 132; 1 Samuel 6:1-16; Luke 21:5-19
+15 WED - Psalm 119:153-176; 1 Samuel 7; Luke 21:20-28
+16 THU - Psalm 143; 1 Samuel 8; Luke 21:29-38
+17 FRI - Psalm 147; 1 Samuel 9:1-14; Luke 22:14-23
+18 SAT - Psalm 3; 1 Samuel 10:1-16; Luke 22:24-30
+19 SUN - Psalm 139
+20 MON - Psalm 5; 1 Samuel 10:17-27; Luke 22:31-38
+21 TUE - Psalm 6; 1 Samuel 11; John 7:27
+22 WED - Psalm 42; 1 Samuel 11; John 20:1-18
+23 THU - Psalm 14; 1 Samuel 12; Luke 22:47-62
+24 FRI - Psalm 139; 1 Samuel 13:5-18; Luke 22:63-71
+25 SAT - Psalm 30; 1 Samuel 14:24-46; Luke 23:13-25
+26 SUN - Psalm 128
+27 MON - Psalm 36; 1 Samuel 15:1-23; Luke 23:26-43
+28 TUE - Psalm 34; 1 Samuel 16; Luke 23:44-56
+29 WED - Psalm 37; 1 Samuel 17:1-30; Luke 23:56-24:12
+30 THU - Psalm 41; 1 Samuel 17:55-18:16; Luke 24:36-53
+31 FRI - Psalm 44; 1 Samuel 19:1-18; Acts 1:1-14
+August
+01 SAT - Psalm 48; 1 Samuel 20:1-17; Acts 1:15-26
+02 SUN - Psalm 17
+03 MON - Psalm 119:57-80; 1 Samuel 20:18-42; Acts 2:1-21
+04 TUE - Psalm 97; 1 Samuel 21:1-22:5; Luke 2:28-56
+05 WED - Psalm 54; 1 Samuel 22:6-23; Acts 2:37-47
+06 THU - Psalm 68; 1 Samuel 23; Acts 3:1-10
+07 FRI - Psalm 85; 1 Samuel 24; Acts 3:11-26
+08 SAT - Psalm 71; 1 Samuel 26; Acts 4:1-12
+09 SUN - Psalm 73
+10 MON - Psalm 77; 1 Samuel 28:3-25; Acts 4:13-31
+11 TUE - Psalm 78:1-39; 1 Samuel 31; Acts 4:32-5:11
+12 WED - Psalm 55; 2 Samuel 1; Acts 5:12-26
+13 THU - Psalm 45; 2 Samuel 2:1-11; Luke 1:46-55
+14 FRI - Psalm 82; 2 Samuel 3:12-39; Acts 6
+15 SAT - Psalm 89:1-18; 2 Samuel 5:1-12; Acts 7:1-16
+16 SUN - Psalm 133
+17 MON - Psalm 119:105-128; 2 Samuel 6:1-19; Acts 7:17-43
+18 TUE - Psalm 90; 2 Samuel 7:1-17; Acts 7:44-53
+19 WED - Psalm 88; 2 Samuel 7:18-29; Acts 7:54-8:3
+20 THU - Psalm 96; 2 Samuel 9; Acts 8:4-25
+21 FRI - Psalm 145; 2 Samuel 11; Luke 22:24-30
+22 SAT - Psalm 106; 2 Samuel 12:1-25; Acts 9:1-19
+23 SUN - Psalm 124
+24 MON - Psalm 111; 2 Samuel 15:1-12; Acts 9:19-31
+25 TUE - Psalm 113; 2 Samuel 15:13-37; Acts 9:32-43
+26 WED - Psalm 139; 2 Samuel 16:1-14; Acts 10:1-16
+27 THU - Psalm 122; 2 Samuel 17:1-23; Acts 10:17-33
+28 FRI - Psalm 132; 2 Samuel 18:19-19:8; Acts 11:1-18
+29 SAT - Psalm 119:153-176; 2 Samuel 19:8-23; Acts 11:19-30
+30 SUN - Psalm 143
+31 MON - Psalm 142; 2 Samuel 19:24-43; Acts 12:1-17
+September
+01 TUE - Psalm 147; 2 Samuel 23:1-7; Acts 12:18-25
+02 WED - Psalm 1; 2 Samuel 24; Acts 13:1-12
+03 THU - Psalm 5; 1 Kings 1:5-31; Acts 13:13-43
+04 FRI - Psalm 119:1-32; 1 Kings 1:32-2:12; Acts 13:44-52
+05 SAT - Psalm 14; 1 Kings 3; Acts 14:8-28
+06 SUN - Psalm 149
+07 MON - Psalm 19; 1 Kings 4:29-5:12; Acts 15:1-21
+08 TUE - Psalm 20; 1 Kings 6:1, 11-28; Acts 15:22-35
+09 WED - Psalm 22; 1 Kings 8:1-30; Acts 15:36-16:5
+10 THU - Psalm 32; 1 Kings 8:31-62; John 3:13-17
+11 FRI - Psalm 34; 1 Kings 8:63-9:9; Acts 16:25-40
+12 SAT - Psalm 37; 1 Kings 10:1-25; Acts 17:1-15
+13 SUN - Psalm 114
+14 MON - Psalm 42; 1 Kings 11:1-13; Acts 17:16-34
+15 TUE - Psalm 14; 1 Kings 12:1-24; Acts 18:1-21
+16 WED - Psalm 119:65-72; 1 Kings 13:5-18; Matthew 9:9-13
+17 THU - Psalm 52; 1 Kings 13:11-34; Acts 19:21-41
+18 FRI - Psalm 73; 1 Kings 15:1-24; Acts 20:1-16
+19 SAT - Psalm 85; 1 Kings 16:29-17:24; Acts 20:17-38
+20 SUN - Psalm 105
+21 MON - Psalm 78:1-39; 1 Kings 18:1-19; Acts 21:1-16
+22 TUE - Psalm 55; 1 Kings 18:20-40; Acts 21:17-36
+23 WED - Psalm 76; 1 Kings 19:1-18; Acts 21:37-22:21
+24 THU - Psalm 117; 1 Kings 21:1-16; Acts 22:22-23:11
+25 FRI - Psalm 36; 1 Kings 21:17-29; Acts 23:12-35
+26 SAT - Psalm 19; 2 Kings 2:1-18; Acts 24:1-23
+27 SUN - Psalm 117; John 2:19-25
+28 MON - Psalm 113; 2 Kings 4:1-37; Acts 25:1-12
+29 TUE - Psalm 132; 2 Kings 5; Acts 25:13-27
+30 WED - Psalm 119:153-176; 2 Kings 6:1-23; Acts 26:1-23
+October
+01 THU - Psalm 143; 2 Kings 6:24-32; Acts 26:24-32
+02 FRI - Psalm 142; 2 Kings 9:1-16; Acts 27:1-26
+03 SAT - Psalm 147; 2 Kings 9:17-37; Acts 27:27-44
+04 SUN - Psalm 122; Matthew 21:12-16
+05 MON - Psalm 1; 2 Kings 12:1-19; Acts 28:1-16
+06 TUE - Psalm 5; 2 Kings 12:24-43; Acts 28:17-31
+07 WED - Psalm 119:1-32; 2 Kings 18:1-12; Philippians 1:1-11
+08 THU - Psalm 14; 2 Kings 18:13-37; Philippians 1:12-30
+09 FRI - Psalm 19; 2 Kings 19:1-19; Philippians 2:1-13
+10 SAT - Psalm 20; 2 Kings 19:20-36; Philippians 2:14-30
+11 SUN - Psalm 106:1-23
+12 MON - Psalm 22; 2 Kings 20; Philippians 3:1-4:1
+13 TUE - Psalm 32; 2 Kings 21:1-18; Philippians 4:2-23
+14 WED - Psalm 34; 2 Kings 22:1-13; 1 Timothy 1:1-7
+15 THU - Psalm 37; 2 Kings 23:4-25; 1 Timothy 1:8-2:15
+16 FRI - Psalm 42; 2 Kings 23:36-24:17; 1 Timothy 3:1-16
+17 SAT - Psalm 14; 2 Kings 24:18-25:12; 1 Timothy 4:1-16
+18 SUN - Psalm 147:1-7; Luke 10:1-9
+19 MON - Psalm 119:65-72; 2 Kings 25:22-30; 1 Timothy 5:1-21
+20 TUE - Psalm 52; 1 Chronicles 29:1-9; 1 Timothy 5:17-6:21
+21 WED - Psalm 73; 1 Chronicles 29:10-20; 2 Timothy 1:1-8
+22 THU - Psalm 85; 1 Chronicles 29:21-30; 2 Timothy 1:15-2:13
+23 FRI - Psalm 78:1-39; 2 Chronicles 26:1-23; 2 Timothy 2:14-26
+24 SAT - Psalm 55; Leviticus 8; 2 Timothy 3:1-17
+25 SUN - Psalm 90:1-17
+26 MON - Psalm 76; Leviticus 9; John 15:17-27
+27 TUE - Psalm 117; Leviticus 16:2-24; 2 Timothy 1:1-8
+28 WED - Psalm 36; Leviticus 17; Titus 1
+29 THU - Psalm 19; Exodus 22:21-23:17; Titus 2
+30 FRI - Psalm 113; Exodus 29:38-30:16; Titus 3
+31 SAT - Psalm 34; Leviticus 8; Philemon
+November
+01 SUN - Psalm 34:1-10; Isaiah 65:17-25; Revelation 7:9-17
+02 MON - Psalm 146; Daniel 1; Revelation 1:1-20
+03 TUE - Psalm 133; Daniel 2:1-24; Revelation 2:1-11
+04 WED - Psalm 9; Daniel 2:25-49; Revelation 2:12-29
+05 THU - Psalm 11; Daniel 3:1-18; Revelation 3:1-13
+06 FRI - Psalm 142; Daniel 3:19-30; Revelation 3:14-22
+07 SAT - Psalm 18; Daniel 4:1-18; Revelation 4:1-11
+08 SUN - Psalm 70
+09 MON - Psalm 1; Daniel 4:19-37; Revelation 5:1-14
+10 TUE - Psalm 24; Daniel 5:1-12; Revelation 6:1-17
+11 WED - Psalm 23; Daniel 5:13-31; Revelation 7:1-4, 9-17
+12 THU - Psalm 26; Daniel 6; Revelation 8:1-13
+13 FRI - Psalm 28; Daniel 7:1-14; Revelation 9:1-12
+14 SAT - Psalm 33; Daniel 7:15-28; Revelation 9:13-21
+15 SUN - Psalm 97:1-2
+16 MON - Psalm 65; Daniel 8:1-14; Revelation 10:7-9
+17 TUE - Psalm 49; Daniel 8:15-27; Revelation 11:6-14
+18 WED - Psalm 57; Daniel 9:1-19; Revelation 12:1-6
+19 THU - Psalm 57; Daniel 9:20-27; Revelation 12:7-17
+20 FRI - Psalm 78:1-39; Daniel 12; Revelation 13:1-10
+21 SAT - Psalm 92; Isaiah 40:1-11; Revelation 14:13
+22 SUN - Psalm 93:1-7; Ephesians 1:15-23
+23 MON - Psalm 100; Isaiah 40:12-26; Revelation 14:14-15
+24 TUE - Psalm 119:57-80; Isaiah 40:27-31; Revelation 18:1-8
+25 WED - Psalm 127; Isaiah 41:21-42:5; Revelation 17:1-5
+26 THU - Psalm 54; Isaiah 42:10-17; Revelation 19:1-24
+27 FRI - Psalm 145; Isaiah 43:8-20; Revelation 18:1-8
+28 SAT - Psalm 19; Isaiah 41:21-42:5; Revelation 17:1-5
+29 SUN - Psalm 80:1-20
+30 MON - Psalm 19:1-6; Isaiah 42:8-25; Matthew 4:18-22
+December
+01 TUE - Psalm 82; Isaiah 43:1-13; Revelation 20:1-15
+02 WED - Psalm 5; Isaiah 43:14-28; Revelation 21:1-8
+03 THU - Psalm 42; Isaiah 44:1-8; Revelation 21:9-21
+04 FRI - Psalm 25; Isaiah 44:9-23; Revelation 21:22-22:5
+05 SAT - Psalm 9; Isaiah 44:24-45:13; Revelation 22:6-21
+06 SUN - Psalm 85:1-13
+07 MON - Psalm 44; Isaiah 45:14-25; 1 Thessalonians 1:1-10
+08 TUE - Psalm 56; Isaiah 46; 1 Thessalonians 2:1-12
+09 WED - Psalm 62; Isaiah 47:1-15; 1 Thessalonians 3:1-13
+10 THU - Psalm 72; Isaiah 48:1-11; 1 Thessalonians 4:1-12
+11 FRI - Psalm 53; Isaiah 49:1-3; 1 Thessalonians 5:1-11
+12 SAT - Psalm 85; Isaiah 49:14-25; 1 Thessalonians 5:12-28
+13 SUN - Psalm 126
+14 MON - Psalm 40; Isaiah 50; 2 Thessalonians 1:1-12
+15 TUE - Psalm 70; Isaiah 51:1-8; 2 Thessalonians 2:1-12
+16 WED - Psalm 75; Isaiah 51:9-16; 2 Thessalonians 3:1-18
+17 THU - Psalm 76; Isaiah 52:13-53:12; 2 Peter 1:1-15
+18 FRI - Psalm 98; Isaiah 54; 2 Peter 1:16-2:8
+19 SAT - Psalm 121; Isaiah 55; 2 Peter 2:4-22
+20 SUN - Psalm 89
+21 MON - Psalm 124; Isaiah 56; Acts 7:51-60
+22 TUE - Psalm 130; Isaiah 9:2-7; Luke 1:67-79
+23 WED - Psalm 45; Isaiah 9:2-7; Luke 1:67-79
+24 THU - Psalm 97; Isaiah 9:2-7; Luke 2:1-14
+25 FRI - Psalm 119:161-168; Isaiah 9:2-7; Luke 2:1-14
+26 SAT - Psalm 82; Isaiah 43:1-13; Acts 7:51-60
+27 SUN - Psalm 117; John 2:19-25
+28 MON - Psalm 36; 1 Corinthians 1:26-29
+29 TUE - Psalm 19; Isaiah 57:15-21; John 1:1-18
+30 WED - Psalm 113; Isaiah 59:15-21; John 1:19-28
+31 THU - Psalm 102; Isaiah 60:1-9; John 1:29-34`;
+
+function parsePlan(raw) {
+  const plan = {};
+  const MONTH_NUMS = {January:1,February:2,March:3,April:4,May:5,June:6,July:7,August:8,September:9,October:10,November:11,December:12};
+  let mon = 0;
+  for (const line of raw.split('\n')) {
+    const t = line.trim();
+    if (MONTH_NUMS[t] !== undefined) { mon = MONTH_NUMS[t]; continue; }
+    const m = t.match(/^(\d{2})\s+\w{3}\s+-\s+(.+)$/);
+    if (m && mon) {
+      const key = `${String(mon).padStart(2,'0')}-${m[1]}`;
+      plan[key] = m[2].split(';').map(r => r.trim()).filter(Boolean);
+    }
+  }
+  return plan;
+}
+const READING_PLAN = parsePlan(PLAN_RAW);
+
+function renderReading() {
+  const now = new Date();
+  const key = `${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const readings = READING_PLAN[key] || [];
+  const el = document.getElementById('reading-content');
+  if (!readings.length) { el.innerHTML = '<div class="empty">No reading for today.</div>'; return; }
+  el.innerHTML = readings.map(r =>
+    `<a class="reading-passage" href="https://www.biblegateway.com/passage/?search=${encodeURIComponent(r)}&version=ESV" target="_blank">
+      <span>${r}</span><span class="reading-passage-arrow">↗</span>
+    </a>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WORKFLOW DEFINITIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAY_BADGES = {
+  0: { label: 'Service Day',    bg: '#fff7ed', color: '#c2410c' },
+  1: { label: 'Kickoff Day',    bg: '#eff6ff', color: '#1d4ed8' },
+  3: { label: 'Rehearsal Day',  bg: '#f5f3ff', color: '#7c3aed' },
+  4: { label: 'Team Comms Day', bg: '#f0fdf4', color: '#15803d' },
+};
+const DAILY_PROMPT = `You are Dimitri's Chief of Staff. Run a quick daily check-in for today. Pull Planning Center to check for any unconfirmed positions or gaps in the next two Sunday plans. Check the Notion Weekly Dashboard for any overdue or flagged items. Output a focused list of 3–5 things that need attention today — no fluff, just what's actionable right now.`;
+const WORKFLOWS = {
+  1: { name: 'Monday Kickoff', type: 'AUTO', when: 'Monday, 9:00am',
+    sources: ['Notion — Last Debrief', 'Planning Center — Next 2 Sundays'],
+    prompt: `You are Dimitri's Chief of Staff. Run the Monday kickoff. Pull the most recent Sunday debrief from Notion. Then open Planning Center and pull the current status of both Sundays in the pipeline. Surface: unconfirmed or unfilled positions, set list status for each Sunday, any follow-ups from the debrief, and anything worth escalating to Jeff Han. Output a prioritized weekly to-do list with clear owners and urgency flags.` },
+  3: { name: 'Wednesday Pre-Rehearsal Check', type: 'TRIGGER', when: 'Wednesday, run midday',
+    sources: ['Planning Center — This Sunday'],
+    prompt: `You are Dimitri's Chief of Staff. Run a pre-rehearsal check for this Sunday. Pull this Sunday's plan from Planning Center. Check: (1) Is the set locked and finalized? (2) Have charts and tracks been distributed — and if so, when? (3) Is the full team confirmed, or are there open positions? (4) Any notes or flags from the WL or band? Output a simple status summary — green/yellow/red for each area — and flag anything that needs to be handled before 6:30pm call time tonight.` },
+  4: { name: 'Thursday Team Comms', type: 'TRIGGER', when: 'Thursday',
+    sources: ['Planning Center — This Sunday', 'voice-principles.md'],
+    prompt: `You are Dimitri's Chief of Staff. Draft the Sunday team message for this week. Pull this Sunday's set list and confirmed team roster from Planning Center. Read voice-principles.md first. Write a warm, specific team message that: names the worship leader and key team members, references something specific about the set or the Sunday (theme, a song, what you're believing for), reminds the team of call time and logistics, and closes with genuine encouragement. Keep it scannable — 150 words or less. Do not use generic openers.` },
+};
+const MONTHLY_WORKFLOWS = [
+  { id: 'monthly-planning', name: 'Monthly Planning', when: 'First Monday of each month', type: 'TRIGGER',
+    prompt: `You are Dimitri's Chief of Staff. Run the monthly planning kickoff. Here is Dimitri's lane status update: [PASTE BELOW]\n\nMUSICAL LEADERSHIP: [What's been strong? What needs work? Any upcoming musical priorities?]\nTEAM CULTURE: [Team health check. Any 1:1s needed? Development progress? Anyone to celebrate or follow up with?]\nSYSTEMS & SCHEDULING: [What's running smoothly? What's breaking or behind? Any gaps in PC scheduling?]\nOVERSIGHT: [Big picture items. Anything to flag upward to Jeff Han? Multi-site or production considerations?]\n\nBased on this, output: (1) 3–5 monthly priorities with target dates and owners, (2) what lane is most at risk of being neglected and why, (3) a reminder checklist of recurring monthly items. Flag anything that needs to go to Jeff Han.` },
+  { id: 'pulse-survey', name: 'Q1 — Volunteer Pulse Survey', when: 'Start of each quarter', type: 'TRIGGER',
+    prompt: `You are Dimitri's Chief of Staff. Design the quarterly volunteer pulse survey for the Vintage worship team. Keep it to 8 questions max. Include: (1) how connected they feel to the team community (1–5), (2) how well-prepared they feel for their serving Sundays (1–5), (3) how they'd rate communication from leadership (1–5), (4) whether they feel their growth as a musician is being supported (1–5), (5) whether their serving frequency feels sustainable (1–5), (6) one thing that's going really well on the team (open), (7) one thing they'd like to see improved (open), (8) anything they need from Dimitri specifically (open). Format it as a clean Google Form-ready list. Add a warm intro paragraph in Dimitri's voice — read voice-principles.md first.` },
+  { id: 'look-ahead', name: 'Q2 — 90-Day Look-Ahead', when: 'Start of each quarter', type: 'TRIGGER',
+    prompt: `You are Dimitri's Chief of Staff. Run the 90-day look-ahead. Based on what you know about the Vintage worship calendar (Kingdom Come monthly, Focus in spring, College + YA first Thursday monthly, Youth on Wednesdays in fall/spring), help Dimitri map the next 90 days.` },
+  { id: 'section-leaders', name: 'Q3 — Section Leader Development', when: 'Start of each quarter', type: 'TRIGGER',
+    prompt: `You are Dimitri's Chief of Staff. Run the quarterly section leader development review. For each section (Worship Leaders, Vocals, Guitar, Bass, Drums, Keys, Strings), help Dimitri capture: (1) who the emerging or current section leader is, (2) one strength you've observed this quarter, (3) one growth area, (4) the next concrete development step.` },
+];
+const MONTHLY_CHECKLIST_ITEMS = [
+  'Section-leader touchpoints scheduled (or completed)',
+  'Monthly volunteer email drafted and sent (1st of month)',
+  'Master song list reviewed — any songs to add or retire?',
+  'Scheduling reviewed 2 months out — gaps flagged in PC',
+  'Team hang planned or confirmed',
+  'Any 1:1 follow-ups from last month done?',
+];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+async function runPrompt(promptText, btn) {
+  try {
+    await navigator.clipboard.writeText(promptText);
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '✓ Copied';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 2000);
+    }
+    showToast('Prompt copied — paste into Claude');
+  } catch(e) {
+    showToast('Copy the prompt text manually');
+  }
+}
+function toggleExpand(promptEl, btn) {
+  const open = promptEl.classList.toggle('expanded');
+  btn.textContent = open ? 'Show less' : 'Show full prompt';
+}
+function toggleAccordion(id) {
+  document.getElementById(id + '-body').classList.toggle('open');
+  document.getElementById(id + '-arrow').classList.toggle('open');
+}
+function toggleDaily() {
+  const body = document.getElementById('daily-body');
+  const icon = document.getElementById('daily-toggle-icon');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  icon.textContent   = open ? '▲ Hide' : '▼ Show';
+}
+function toggleMonthlyItem(i) {
+  const item = document.getElementById(`mcl-${i}`);
+  const box  = document.getElementById(`mcl-box-${i}`);
+  const done = box.classList.toggle('checked');
+  item.classList.toggle('done', done);
+}
+function workflowCard(wf, large) {
+  const pid = `p-${(wf.id || wf.name).replace(/\W/g,'-')}`;
+  const sources = (wf.sources||[]).map(s=>`<span class="wf-source">${s}</span>`).join('');
+  if (large) {
+    return `<div class="wf-card">
+      <div class="wf-header">
+        <div class="wf-title-group">
+          <div class="wf-name">${wf.name}</div>
+          <div class="wf-meta">
+            <span class="wf-badge ${wf.type.toLowerCase()}">${wf.type}</span>
+            <span style="font-size:11px;color:var(--muted)">${wf.when}</span>
+          </div>
+        </div>
+        <div class="wf-sources">${sources}</div>
+      </div>
+      <div class="wf-prompt-label">Prompt</div>
+      <div class="wf-prompt" id="${pid}">${wf.prompt}</div>
+      <div class="wf-actions">
+        <button class="run-btn" onclick="runPrompt(document.getElementById('${pid}').textContent,this)">▶ Run Prompt</button>
+        <button class="expand-btn" onclick="toggleExpand(document.getElementById('${pid}'),this)">Show full prompt</button>
+      </div>
+    </div>`;
+  }
+  return `<div class="wf-mini">
+    <div class="wf-mini-name">${wf.name}</div>
+    <div class="wf-mini-when">${wf.type} · ${wf.when}</div>
+    <div class="wf-mini-prompt" id="${pid}">${wf.prompt}</div>
+    <div class="wf-actions">
+      <button class="run-btn-sm" onclick="runPrompt(document.getElementById('${pid}').textContent,this)">▶ Run</button>
+      <button class="expand-btn" onclick="toggleExpand(document.getElementById('${pid}'),this)">Show full</button>
+    </div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════════════════
+function initHeader() {
+  const now = new Date(), d = now.getDay();
+  document.getElementById('date-line').textContent =
+    `${DAYS[d]}, ${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+  const b = DAY_BADGES[d], el = document.getElementById('day-badge');
+  if (b) { el.textContent = b.label; el.style.background = b.bg; el.style.color = b.color; }
+}
+function initWorkflows() {
+  const day = new Date().getDay();
+  const wf  = WORKFLOWS[day];
+  const primaryEl = document.getElementById('primary-workflow');
+  if (wf) primaryEl.innerHTML = workflowCard(wf, true);
+  const dailyEl = document.getElementById('daily-checkin');
+  const weekday = day >= 1 && day <= 5;
+  if (!weekday) {
+    dailyEl.innerHTML = '';
+  } else if (wf) {
+    dailyEl.innerHTML = `<div class="daily-card">
+      <div class="daily-header" onclick="toggleDaily()">
+        <div class="daily-title">⏱ Daily Check-In · AUTO · Mon–Thu 9am</div>
+        <div id="daily-toggle-icon">▼ Show</div>
+      </div>
+      <div id="daily-body" style="display:none">
+        <div class="daily-prompt" id="daily-prompt-text">${DAILY_PROMPT}</div>
+        <button class="run-btn-sm" onclick="runPrompt(document.getElementById('daily-prompt-text').textContent,this)">▶ Run Prompt</button>
+      </div>
+    </div>`;
+  } else {
+    primaryEl.innerHTML = workflowCard({ name:'Daily Check-In', type:'AUTO', when:'Mon–Thu, 9:00am', sources:['Planning Center','Notion Weekly Dashboard'], prompt:DAILY_PROMPT }, true);
+  }
+  document.getElementById('monthly-workflows').innerHTML = MONTHLY_WORKFLOWS.map(w=>workflowCard(w,false)).join('');
+  document.getElementById('monthly-checklist').innerHTML = `
+    <div class="monthly-cl-title">Recurring Monthly Items</div>
+    <div class="monthly-cl-items">${MONTHLY_CHECKLIST_ITEMS.map((item,i)=>`
+      <div class="mcl-item" id="mcl-${i}">
+        <div class="mcl-box" id="mcl-box-${i}" onclick="toggleMonthlyItem(${i})"></div>
+        <span class="mcl-label">${item}</span>
+      </div>`).join('')}</div>`;
+}
+
+async function load() {
+  // Show config warning if token not set
+  if (!CONFIG.NOTION_TOKEN || CONFIG.NOTION_TOKEN.includes('YOUR_TOKEN')) {
+    document.getElementById('config-banner').classList.add('show');
+    document.getElementById('tasks-content').innerHTML    = '<div class="empty">Add your Notion token in the CONFIG block to load live data.</div>';
+    document.getElementById('checklist-content').innerHTML = '<div class="empty">Add your Notion token in the CONFIG block to load live data.</div>';
+    document.getElementById('debrief-content').innerHTML   = '<div class="empty">Add your Notion token in the CONFIG block to load live data.</div>';
+  } else {
+    loadWeekly();
+    loadDebrief();
+  }
+  initHeader();
+  initWorkflows();
+  renderReading();
+}
+
+load();
+</script>
+
+<!--
+═══════════════════════════════════════════════════════════════════════════════
+CLOUDFLARE WORKER — deploy this to handle CORS
+(https://developers.cloudflare.com/workers/get-started/guide/)
+═══════════════════════════════════════════════════════════════════════════════
+
+export default {
+  async fetch(request, env) {
+    const NOTION_TOKEN = env.NOTION_TOKEN; // set in Workers env vars
+    const url = new URL(request.url);
+    const notionPath = url.pathname + url.search;
+    const notionUrl  = 'https://api.notion.com' + notionPath;
+
+    const headers = new Headers(request.headers);
+    headers.set('Authorization', `Bearer ${NOTION_TOKEN}`);
+    headers.set('Notion-Version', '2022-06-28');
+
+    const res = await fetch(notionUrl, {
+      method:  request.method,
+      headers: headers,
+      body:    request.method !== 'GET' ? request.body : undefined,
+    });
+
+    return new Response(res.body, {
+      status:  res.status,
+      headers: {
+        'Content-Type':                'application/json',
+        'Access-Control-Allow-Origin': '*',  // lock this down to your domain in prod
+      },
+    });
+  }
+};
+
+After deploying, set PROXY_BASE in CONFIG to your Worker URL.
+The token lives in Cloudflare env vars — never in the HTML file.
+═══════════════════════════════════════════════════════════════════════════════
+-->
+
+</body>
+</html>
