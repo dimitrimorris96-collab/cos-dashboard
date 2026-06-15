@@ -30,18 +30,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chief of Staff — Dimitri Morris</title>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
 <style>
 /* ── CONFIG: swap these CSS vars to retheme ── */
 :root {
   color-scheme: light;
-  --bg: #f4f4f8;
+  --bg: #f5f3ee;
   --card: #ffffff;
-  --border: #e4e4ee;
-  --text: #1a1a2e;
-  --muted: #6b6b85;
-  --accent: #b86c2a;
-  --accent-bg: #fdf0e6;
-  --accent-border: #f5d0a9;
+  --border: #e4dfd6;
+  --text: #1c2b27;
+  --muted: #7a8c87;
+  --accent: #405a50;
+  --accent-hover: #2f4239;
+  --accent-bg: #eef2f0;
+  --accent-border: #c5d4ce;
   --green: #15803d;
   --green-bg: #f0fdf4;
   --green-border: #bbf7d0;
@@ -63,11 +65,34 @@
   --indigo-border: #c7d2fe;
   --radius: 10px;
 }
+:root.dark {
+  color-scheme: dark;
+  --bg: #151e1b;
+  --card: #1e2a26;
+  --border: #2a3832;
+  --text: #ede9e1;
+  --muted: #8a9e97;
+  --accent: #7ab5a0;
+  --accent-hover: #93c9b6;
+  --accent-bg: #1e2e29;
+  --accent-border: #2d4039;
+  --green-bg: #14271e;
+  --green-border: #1e4030;
+  --blue-bg: #111d36;
+  --blue-border: #1a3060;
+  --red-bg: #2a1515;
+  --red-border: #4a2020;
+  --yellow-bg: #2a2410;
+  --yellow-border: #4a3e18;
+  --indigo-bg: #161428;
+  --indigo-border: #252060;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  transition: background 0.4s, color 0.4s;
   font-size: 14px;
   line-height: 1.5;
   padding: 20px;
@@ -130,7 +155,7 @@ body {
   background: var(--accent); color: #fff; border: none; border-radius: 8px;
   font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s;
 }
-.run-btn:hover  { background: #a05c22; }
+.run-btn:hover  { background: var(--accent-hover); }
 .run-btn.copied { background: var(--green); }
 .expand-btn { background: none; border: none; cursor: pointer; font-size: 12px; color: var(--muted); padding: 0; text-decoration: underline; text-underline-offset: 2px; }
 .expand-btn:hover { color: var(--text); }
@@ -180,7 +205,7 @@ body {
 .wf-mini-prompt { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 12px; line-height: 1.6; margin-bottom: 10px; max-height: 80px; overflow-y: auto; }
 .wf-mini-prompt.expanded { max-height: none; }
 .run-btn-sm { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--accent); color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
-.run-btn-sm:hover  { background: #a05c22; }
+.run-btn-sm:hover  { background: var(--accent-hover); }
 .run-btn-sm.copied { background: var(--green); }
 .monthly-cl { margin-top: 16px; }
 .monthly-cl-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 10px; }
@@ -1224,6 +1249,13 @@ async function load() {
   initWorkflows();
   renderReading();
 }
+
+function applyTheme() {
+  const h = new Date().getHours();
+  document.documentElement.classList.toggle('dark', h >= 18 || h < 8);
+}
+applyTheme();
+setInterval(applyTheme, 60000);
 
 load();
 </script>
