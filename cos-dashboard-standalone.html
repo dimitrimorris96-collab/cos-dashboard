@@ -1086,11 +1086,11 @@ function initWorkflows() {
 
 async function load() {
   // Show config warning if token not set
-  if (!CONFIG.NOTION_TOKEN || CONFIG.NOTION_TOKEN.includes('YOUR_TOKEN')) {
+  if (!CONFIG.PROXY_BASE) {
     document.getElementById('config-banner').classList.add('show');
-    document.getElementById('tasks-content').innerHTML    = '<div class="empty">Add your Notion token in the CONFIG block to load live data.</div>';
-    document.getElementById('checklist-content').innerHTML = '<div class="empty">Add your Notion token in the CONFIG block to load live data.</div>';
-    document.getElementById('debrief-content').innerHTML   = '<div class="empty">Add your Notion token in the CONFIG block to load live data.</div>';
+    document.getElementById('tasks-content').innerHTML    = '<div class="empty">Add your proxy URL in the CONFIG block to load live data.</div>';
+    document.getElementById('checklist-content').innerHTML = '<div class="empty">Add your proxy URL in the CONFIG block to load live data.</div>';
+    document.getElementById('debrief-content').innerHTML   = '<div class="empty">Add your proxy URL in the CONFIG block to load live data.</div>';
   } else {
     loadWeekly();
     loadDebrief();
