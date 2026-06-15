@@ -1164,7 +1164,7 @@ async function loadPCO() {
         fetchPCO(`/services/v2/service_types/${CONFIG.PCO_SERVICE_TYPE_ID}/plans/${plan.id}/team_members?per_page=50`),
       ]);
       const songs = (itemsData.data || []).filter(i => i.attributes?.item_type === 'song');
-      const NON_WORSHIP = ['camera','audio','foh','technical','propresenter','presenter','stage','overflow','prayer','courtyard','sanctuary'];
+      const NON_WORSHIP = ['camera','audio','foh','technical','propresenter','presenter','stage','overflow','prayer','courtyard','sanctuary','manager','co-lead','production'];
       const team = (teamData.data || []).filter(m => {
         const pos = (m.attributes?.team_position_name || '').toLowerCase();
         return !NON_WORSHIP.some(kw => pos.includes(kw));
