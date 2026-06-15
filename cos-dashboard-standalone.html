@@ -1164,7 +1164,11 @@ async function loadPCO() {
         fetchPCO(`/services/v2/service_types/${CONFIG.PCO_SERVICE_TYPE_ID}/plans/${plan.id}/team_members?per_page=50`),
       ]);
       const songs = (itemsData.data || []).filter(i => i.attributes?.item_type === 'song');
-      const team  = teamData.data || [];
+      const NON_WORSHIP = ['camera','audio','foh','technical','propresenter','presenter','stage','overflow','prayer','courtyard','sanctuary'];
+      const team = (teamData.data || []).filter(m => {
+        const pos = (m.attributes?.team_position_name || '').toLowerCase();
+        return !NON_WORSHIP.some(kw => pos.includes(kw));
+      });
       const date  = new Date(plan.attributes.sort_date);
       const dateStr = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
       const counts = { C: 0, U: 0, D: 0 };
