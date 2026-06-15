@@ -212,6 +212,33 @@ body {
 .loading { color: var(--muted); font-style: italic; font-size: 13px; padding: 6px 0; }
 .error   { color: var(--red);   font-size: 13px; }
 .empty   { color: var(--muted); font-size: 13px; }
+/* ── Tabs ── */
+.tab-nav { display: flex; gap: 0; margin-bottom: 18px; border-bottom: 2px solid var(--border); }
+.tab-btn { padding: 9px 18px; font-size: 13px; font-weight: 600; border: none; background: none; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-btn:hover:not(.active) { color: var(--text); }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+/* ── PCO ── */
+.pco-plans { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+@media (max-width: 700px) { .pco-plans { grid-template-columns: 1fr; } }
+.pco-plan-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+.pco-plan-date { font-size: 15px; font-weight: 700; margin-bottom: 3px; }
+.pco-plan-sub { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.pco-section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); margin: 14px 0 8px; }
+.song-item { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; gap: 8px; }
+.song-item:last-child { border-bottom: none; }
+.song-key { font-size: 11px; font-weight: 700; padding: 2px 8px; background: var(--indigo-bg); color: var(--indigo); border: 1px solid var(--indigo-border); border-radius: 20px; flex-shrink: 0; }
+.team-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; gap: 8px; }
+.team-item:last-child { border-bottom: none; }
+.team-name { font-weight: 500; }
+.team-position { font-size: 11px; color: var(--muted); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.status-C { background: var(--green); }
+.status-U { background: var(--yellow); }
+.status-D { background: var(--red); }
+.status-legend { display: flex; gap: 14px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -239,6 +266,9 @@ const CONFIG = {
   //      Then set this to your Worker URL: 'https://cos-proxy.YOUR_NAME.workers.dev'
   PROXY_BASE: 'https://empty-salad-47a0.dimitrimorris96.workers.dev',
 
+  // Planning Center service type ID (Santa Monica: Sunday Services)
+  PCO_SERVICE_TYPE_ID: '439097',
+
   // Notion API version
   NOTION_VERSION: '2022-06-28',
 };
@@ -258,39 +288,52 @@ const CONFIG = {
   <div class="day-badge" id="day-badge"></div>
 </div>
 
-<div id="primary-workflow"></div>
-<div id="daily-checkin"></div>
+<div class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab('overview', this)">Overview</button>
+  <button class="tab-btn" onclick="switchTab('pco', this)">📋 Planning Center</button>
+</div>
 
-<div class="grid-3" style="margin-bottom:14px">
-  <div class="card">
-    <div class="card-title">🔥 Active Tasks</div>
-    <div id="tasks-content" class="loading">Loading from Notion…</div>
+<div id="tab-overview" class="tab-pane active">
+  <div id="primary-workflow"></div>
+  <div id="daily-checkin"></div>
+
+  <div class="grid-3" style="margin-bottom:14px">
+    <div class="card">
+      <div class="card-title">🔥 Active Tasks</div>
+      <div id="tasks-content" class="loading">Loading from Notion…</div>
+    </div>
+    <div class="card">
+      <div class="card-title">📝 Last Sunday</div>
+      <div id="debrief-content" class="loading">Loading from Notion…</div>
+    </div>
+    <div class="card">
+      <div class="card-title">📖 Today's Reading</div>
+      <div id="reading-content"></div>
+    </div>
   </div>
-  <div class="card">
-    <div class="card-title">📝 Last Sunday</div>
-    <div id="debrief-content" class="loading">Loading from Notion…</div>
+
+  <div class="grid">
+    <div class="card full">
+      <div class="card-title">✅ Weekly Checklist</div>
+      <div id="checklist-content" class="loading">Loading from Notion…</div>
+    </div>
   </div>
-  <div class="card">
-    <div class="card-title">📖 Today's Reading</div>
-    <div id="reading-content"></div>
+
+  <div class="section-accordion" id="monthly-accordion">
+    <div class="accordion-header" onclick="toggleAccordion('monthly-accordion')">
+      <div class="accordion-title">📆 Monthly &amp; Quarterly Workflows</div>
+      <div class="accordion-arrow" id="monthly-accordion-arrow">▼</div>
+    </div>
+    <div class="accordion-body" id="monthly-accordion-body">
+      <div class="wf-grid" id="monthly-workflows"></div>
+      <div class="monthly-cl" id="monthly-checklist"></div>
+    </div>
   </div>
 </div>
 
-<div class="grid">
-  <div class="card full">
-    <div class="card-title">✅ Weekly Checklist</div>
-    <div id="checklist-content" class="loading">Loading from Notion…</div>
-  </div>
-</div>
-
-<div class="section-accordion" id="monthly-accordion">
-  <div class="accordion-header" onclick="toggleAccordion('monthly-accordion')">
-    <div class="accordion-title">📆 Monthly &amp; Quarterly Workflows</div>
-    <div class="accordion-arrow" id="monthly-accordion-arrow">▼</div>
-  </div>
-  <div class="accordion-body" id="monthly-accordion-body">
-    <div class="wf-grid" id="monthly-workflows"></div>
-    <div class="monthly-cl" id="monthly-checklist"></div>
+<div id="tab-pco" class="tab-pane">
+  <div class="pco-plans" id="pco-plans">
+    <div class="loading">Loading from Planning Center…</div>
   </div>
 </div>
 
@@ -1082,6 +1125,84 @@ function initWorkflows() {
         <div class="mcl-box" id="mcl-box-${i}" onclick="toggleMonthlyItem(${i})"></div>
         <span class="mcl-label">${item}</span>
       </div>`).join('')}</div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PLANNING CENTER
+// ═══════════════════════════════════════════════════════════════════════════════
+let pcoLoaded = false;
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'pco' && !pcoLoaded) { loadPCO(); pcoLoaded = true; }
+}
+
+function pcoUrl(path) {
+  const base = CONFIG.PROXY_BASE ? CONFIG.PROXY_BASE.replace(/\/$/, '') + '/pco' : 'https://api.planningcenteronline.com';
+  return base + path;
+}
+
+async function fetchPCO(path) {
+  const res = await fetch(pcoUrl(path));
+  if (!res.ok) throw new Error(`PCO ${res.status}`);
+  return res.json();
+}
+
+async function loadPCO() {
+  const el = document.getElementById('pco-plans');
+  try {
+    const plansData = await fetchPCO(`/services/v2/service_types/${CONFIG.PCO_SERVICE_TYPE_ID}/plans?filter=future&order=sort_date&per_page=2`);
+    const plans = plansData.data || [];
+    if (!plans.length) { el.innerHTML = '<div class="empty">No upcoming plans found.</div>'; return; }
+
+    const planHtmls = await Promise.all(plans.map(async plan => {
+      const [itemsData, teamData] = await Promise.all([
+        fetchPCO(`/services/v2/service_types/${CONFIG.PCO_SERVICE_TYPE_ID}/plans/${plan.id}/items?per_page=25`),
+        fetchPCO(`/services/v2/service_types/${CONFIG.PCO_SERVICE_TYPE_ID}/plans/${plan.id}/team_members?per_page=50`),
+      ]);
+      const songs = (itemsData.data || []).filter(i => i.attributes?.item_type === 'song');
+      const team  = teamData.data || [];
+      const date  = new Date(plan.attributes.sort_date);
+      const dateStr = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+      const counts = { C: 0, U: 0, D: 0 };
+      team.forEach(m => { const s = m.attributes?.status; if (s in counts) counts[s]++; });
+
+      return `<div class="pco-plan-card">
+        <div class="pco-plan-date">${escHtml(dateStr)}</div>
+        <div class="pco-plan-sub">${counts.C} confirmed &middot; ${counts.U} unconfirmed &middot; ${counts.D} declined</div>
+
+        <div class="pco-section-title">Set List</div>
+        ${songs.length ? songs.map(s => `
+          <div class="song-item">
+            <span>${escHtml(s.attributes?.title || 'Untitled')}</span>
+            ${s.attributes?.key_name ? `<span class="song-key">${escHtml(s.attributes.key_name)}</span>` : ''}
+          </div>`).join('') : '<div class="empty">No songs added yet.</div>'}
+
+        <div class="pco-section-title">Team</div>
+        ${team.length ? team.map(m => `
+          <div class="team-item">
+            <div>
+              <div class="team-name">${escHtml(m.attributes?.name || '')}</div>
+              <div class="team-position">${escHtml(m.attributes?.team_position_name || '')}</div>
+            </div>
+            <div class="status-dot status-${escHtml(m.attributes?.status || 'U')}"></div>
+          </div>`).join('') : '<div class="empty">No team scheduled.</div>'}
+
+        <div class="status-legend">
+          <div class="legend-item"><div class="status-dot status-C"></div>Confirmed</div>
+          <div class="legend-item"><div class="status-dot status-U"></div>Unconfirmed</div>
+          <div class="legend-item"><div class="status-dot status-D"></div>Declined</div>
+        </div>
+      </div>`;
+    }));
+    el.innerHTML = planHtmls.join('');
+  } catch(e) {
+    console.error('PCO load error:', e);
+    el.innerHTML = `<div class="card"><div class="error">Couldn't load from Planning Center. <a href="https://services.planningcenteronline.com" target="_blank" style="color:var(--accent)">Open in PCO ↗</a></div></div>`;
+  }
 }
 
 async function load() {
